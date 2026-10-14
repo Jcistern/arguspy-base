@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArgusPy | Reporte de ejecución</title>
+  <style>
+    :root { --bg:#f5f7fb; --surface:#fff; --text:#18212f; --muted:#64748b; --line:#e2e8f0; --primary:#2563eb; --passed:#16a34a; --failed:#dc2626; --broken:#ea580c; --skipped:#d97706; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 Inter,Segoe UI,Arial,sans-serif; }
+    header { color:#fff; padding:32px max(24px,calc((100% - 1200px)/2)); background:linear-gradient(120deg,#0f172a,#1d4ed8); }
+    header h1 { margin:0; font-size:28px; } header p { margin:7px 0 0; opacity:.82; }
+    main { max-width:1200px; margin:0 auto; padding:24px; } h2 { font-size:19px; margin:30px 0 14px; }
+    .cards { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; } .card { background:var(--surface); border-radius:10px; padding:16px; box-shadow:0 1px 3px #0f172a13; border-top:4px solid var(--primary); } .card b { display:block; font-size:26px; } .card span { color:var(--muted); font-size:12px; }
+    .passed { color:var(--passed); } .failed { color:var(--failed); } .broken { color:var(--broken); } .skipped { color:var(--skipped); }
+    .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:10px 0 16px; }
+    .row .spacer { flex:1; }
+    select, input[type="date"] { border:1px solid var(--line); background:#fff; padding:7px 11px; border-radius:7px; color:var(--text); }
+    button { border:1px solid var(--line); background:#fff; padding:7px 11px; border-radius:7px; cursor:pointer; color:var(--text); }
+    button.active, button:hover { color:#fff; background:var(--primary); border-color:var(--primary); }
+    .panel { background:var(--surface); border-radius:10px; padding:16px; box-shadow:0 1px 3px #0f172a13; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .muted { color:var(--muted); }
+    .kpi { display:flex; align-items:baseline; gap:8px; }
+    .kpi b { font-size:22px; }
+    .charts canvas { width:100%; height:260px; }
+    .filters { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; }
+    .epic { background:var(--surface); border-radius:10px; margin:10px 0; overflow:hidden; box-shadow:0 1px 3px #0f172a13; } .epic > summary { padding:13px 16px; font-weight:700; cursor:pointer; } .test { border-top:1px solid var(--line); } .test > summary { display:flex; align-items:center; gap:9px; cursor:pointer; padding:13px 16px; } .test summary::-webkit-details-marker,.epic summary::-webkit-details-marker { display:none; }
+    .status { width:10px; height:10px; border-radius:50%; flex:none; background:#94a3b8; } .status.passed { background:var(--passed); } .status.failed { background:var(--failed); } .status.broken { background:var(--broken); } .status.skipped { background:var(--skipped); }
+    .test-name { font-weight:600; flex:1; overflow-wrap:anywhere; } .duration { color:var(--muted); font-size:12px; white-space:nowrap; } .detail { padding:0 16px 17px 35px; } .meta { color:var(--muted); margin:0 0 12px; font-size:12px; } .tag { display:inline-block; background:#e0e7ff; color:#3730a3; border-radius:12px; padding:2px 8px; margin:1px 3px 1px 0; }
+    .error { white-space:pre-wrap; background:#fff1f2; color:#9f1239; border-left:3px solid var(--failed); padding:10px; border-radius:4px; max-height:280px; overflow:auto; } .steps { margin:12px 0; padding:0; list-style:none; } .step { padding:7px 0 7px 16px; border-left:2px solid var(--line); } .step .status { display:inline-block; margin-right:7px; } .evidence { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; } .evidence figure { margin:0; max-width:520px; } .evidence img,.evidence video { max-width:100%; border:1px solid var(--line); border-radius:6px; } .evidence figcaption { color:var(--muted); font-size:12px; margin-top:3px; } pre { white-space:pre-wrap; max-height:200px; overflow:auto; background:#f8fafc; padding:10px; }
+    footer { color:var(--muted); text-align:center; padding:28px; font-size:12px; }
+    @media(max-width:900px) { .cards { grid-template-columns:repeat(2,1fr); } .grid-2,.grid-3 { grid-template-columns:1fr; } header { padding:24px; } main { padding:16px; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>ArgusPy · Reporte de ejecución</h1>
+  <p>Reporte HTML propio generado desde <code>allure-results</code> · {{ generado }}</p>
+</header>
+
+<main>
+  <div class="row">
+    <div>
+      <label for="runDate" class="muted">Fecha</label><br>
+      <input id="runDate" type="date" aria-label="Seleccionar fecha" />
+    </div>
+    <div>
+      <label for="runSelect" class="muted">Ejecución (del día)</label><br>
+      <select id="runSelect" aria-label="Seleccionar ejecución del día" disabled></select>
+    </div>
+    <div>
+      <label class="muted">Run ID</label><br>
+      <code id="runId">{{ run_id }}</code>
+    </div>
+    <div class="spacer"></div>
+    <div>
+      <button id="reloadBtn" type="button">Recargar</button>
+    </div>
+  </div>
+
+  <h2>Dashboard</h2>
+
+  <section class="cards" id="kpiCards" aria-label="KPIs">
+    <article class="card"><b id="kpiTotal">—</b><span>Total de pruebas</span></article>
+    <article class="card"><b class="passed" id="kpiPassed">—</b><span>Exitosas</span></article>
+    <article class="card"><b class="failed" id="kpiFailed">—</b><span>Fallidas</span></article>
+    <article class="card"><b class="broken" id="kpiBroken">—</b><span>Interrumpidas</span></article>
+    <article class="card"><b class="skipped" id="kpiSkipped">—</b><span>Omitidas</span></article>
+    <article class="card"><b id="kpiSuccess">—</b><span>Éxito · <span id="kpiDuration">—</span></span></article>
+  </section>
+
+  <section class="grid-2 charts" style="margin-top:12px">
+    <div class="panel">
+      <div class="row" style="margin:0 0 8px">
+        <b>Estados</b><span class="spacer"></span><span class="muted" id="summaryGeneratedAt"></span>
+      </div>
+      <canvas id="statusChart"></canvas>
+    </div>
+    <div class="panel">
+      <div class="row" style="margin:0 0 8px">
+        <b>Tendencia de éxito (historial)</b><span class="spacer"></span><span class="muted">Últimas 30</span>
+      </div>
+      <canvas id="trendChart"></canvas>
+    </div>
+  </section>
+
+  <section class="grid-2 charts" style="margin-top:12px">
+    <div class="panel">
+      <div class="row" style="margin:0 0 8px"><b>Fallos por épica (top)</b></div>
+      <canvas id="epicChart"></canvas>
+    </div>
+    <div class="panel">
+      <div class="row" style="margin:0 0 8px"><b>Por severidad</b></div>
+      <canvas id="severityChart"></canvas>
+    </div>
+  </section>
+
+  <h2>Detalle de resultados</h2>
+  <div class="filters">
+    <button class="active" data-filter="all">Todos</button>
+    <button data-filter="passed">Exitosos</button>
+    <button data-filter="failed">Fallidos</button>
+    <button data-filter="broken">Interrumpidos</button>
+    <button data-filter="skipped">Omitidos</button>
+  </div>
+  <div id="detailRoot" class="muted">Cargando…</div>
+</main>
+
+<footer>ArgusPy · Reporte generado localmente sin Allure CLI ni Java.</footer>
+
+<script src="vendor/chart.umd.min.js"></script>
+{% autoescape false %}
+<script>
+// Datos inyectados directamente en el HTML (sin necesidad de servidor o fetch)
+const CATALOG = {{ catalog_json }};
+const CURRENT_SUMMARY = {{ summary_json }};
+const CURRENT_TESTS_PAYLOAD = {{ tests_json }};
+const TREND_DATA = {{ trend_json }};
+const HISTORY_DATA = {{ history_json }};
+
+const $ = (sel) => document.querySelector(sel);
+
+const stateOrder = ["passed","failed","broken","skipped","unknown"];
+const stateColors = {
+  passed: getComputedStyle(document.documentElement).getPropertyValue("--passed").trim(),
+  failed: getComputedStyle(document.documentElement).getPropertyValue("--failed").trim(),
+  broken: getComputedStyle(document.documentElement).getPropertyValue("--broken").trim(),
+  skipped: getComputedStyle(document.documentElement).getPropertyValue("--skipped").trim(),
+  unknown: "#94a3b8"
+};
+
+let charts = { status:null, trend:null, epic:null, severity:null };
+
+function fmtDateLabel(iso) {
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function setKpis(summary) {
+  $("#kpiTotal").textContent = summary.total ?? "—";
+  $("#kpiPassed").textContent = summary.status?.passed ?? 0;
+  $("#kpiFailed").textContent = summary.status?.failed ?? 0;
+  $("#kpiBroken").textContent = summary.status?.broken ?? 0;
+  $("#kpiSkipped").textContent = summary.status?.skipped ?? 0;
+  $("#kpiSuccess").textContent = (summary.successRate ?? 0) + "%";
+  $("#kpiDuration").textContent = summary.durationHuman ?? "—";
+  $("#runId").textContent = summary.runId ?? $("#runId").textContent;
+  $("#summaryGeneratedAt").textContent = summary.generatedAt ? fmtDateLabel(summary.generatedAt) : "";
+}
+
+function destroyChart(chart) {
+  if (chart) { chart.destroy(); }
+  return null;
+}
+
+function buildStatusChart(summary) {
+  charts.status = destroyChart(charts.status);
+  const ctx = $("#statusChart");
+  const values = stateOrder.map(s => summary.status?.[s] ?? 0);
+  charts.status = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: stateOrder,
+      datasets: [{ data: values, backgroundColor: stateOrder.map(s => stateColors[s]) }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "bottom" } }
+    }
+  });
+}
+
+function buildEpicChart(summary) {
+  charts.epic = destroyChart(charts.epic);
+  const top = (summary.byEpic ?? []).slice(0, 10);
+  const labels = top.map(x => x.name);
+  const failed = top.map(x => (x.failed ?? 0) + (x.broken ?? 0));
+  charts.epic = new Chart($("#epicChart"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Fallos+Interrumpidos", data: failed, backgroundColor: stateColors.failed }] },
+    options: { responsive:true, plugins:{ legend:{ display:true } }, scales:{ y:{ beginAtZero:true } } }
+  });
+}
+
+function buildSeverityChart(summary) {
+  charts.severity = destroyChart(charts.severity);
+  const items = summary.bySeverity ?? [];
+  charts.severity = new Chart($("#severityChart"), {
+    type: "bar",
+    data: {
+      labels: items.map(i => i.name),
+      datasets: [{ label: "Cantidad", data: items.map(i => i.count), backgroundColor: "#1d4ed8" }]
+    },
+    options: { responsive:true, scales:{ y:{ beginAtZero:true } } }
+  });
+}
+
+async function buildTrendChart() {
+  charts.trend = destroyChart(charts.trend);
+  // Usar datos de tendencia inyectados directamente (standalone, sin fetch)
+  const points = (TREND_DATA ?? []).slice().reverse(); // de viejo a nuevo para el gráfico
+  if (!points.length) {
+    // Sin datos históricos, no dibujar gráfico
+    return;
+  }
+  charts.trend = new Chart($("#trendChart"), {
+    type: "line",
+    data: {
+      labels: points.map(p => fmtDateLabel(p.generatedAt)),
+      datasets: [{ label: "Éxito (%)", data: points.map(p => p.successRate ?? 0), borderColor: "#16a34a", backgroundColor: "rgba(22,163,74,.15)", fill:true, tension:.25 }]
+    },
+    options: { responsive:true, scales:{ y:{ beginAtZero:true, max:100 } } }
+  });
+}
+
+function escapeHtml(s) {
+  const str = String(s ?? "");
+  const dq = String.fromCharCode(34); // "
+  const amp = String.fromCharCode(38); // &
+  const lt = String.fromCharCode(60);  // <
+  const gt = String.fromCharCode(62);  // >
+  return str
+    .replaceAll(amp, amp + "amp;")
+    .replaceAll(lt, amp + "lt;")
+    .replaceAll(gt, amp + "gt;")
+    .replaceAll(dq, amp + "quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderSteps(steps) {
+  if (!steps?.length) return "";
+  const li = steps.map(st => {
+    const nested = st.pasos?.length ? `<ul class="steps">${renderSteps(st.pasos)}</ul>` : "";
+    return `<li class="step"><i class="status ${escapeHtml(st.estado)}"></i>${escapeHtml(st.nombre)} <span class="duration">(${escapeHtml(st.duracion)} ms)</span>${nested}</li>`;
+  }).join("");
+  return li;
+}
+
+function renderEvidence(adjuntos) {
+  if (!adjuntos?.length) return "";
+  const blocks = adjuntos.map(e => {
+    const name = escapeHtml(e.nombre);
+    if (e.imagen && e.ruta) return `<figure><img src="${escapeHtml(e.ruta)}" alt="${name}"><figcaption>${name}</figcaption></figure>`;
+    if (e.video && e.ruta) return `<figure><video controls preload="metadata"><source src="${escapeHtml(e.ruta)}" type="video/webm"></video><figcaption>${name}</figcaption></figure>`;
+    if (e.texto && e.contenido) return `<figure><pre>${escapeHtml(e.contenido)}</pre><figcaption>${name}</figcaption></figure>`;
+    if (e.ruta) return `<figure><a href="${escapeHtml(e.ruta)}">${name}</a><figcaption>${name}</figcaption></figure>`;
+    return "";
+  }).join("");
+  return `<h4>Evidencias</h4><div class="evidence">${blocks}</div>`;
+}
+
+function renderDetail(tests) {
+  const root = $("#detailRoot");
+  if (!tests?.length) { root.innerHTML = "<p>No se encontraron tests en esta ejecución.</p>"; return; }
+
+  // agrupar por épica
+  const map = new Map();
+  for (const t of tests) {
+    const epic = t.epic ?? "Sin épica";
+    if (!map.has(epic)) map.set(epic, []);
+    map.get(epic).push(t);
+  }
+
+  const html = [...map.entries()].map(([epic, items]) => {
+    const testsHtml = items.map(t => {
+      const tags = (t.tags ?? []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
+      const err = t.mensaje_error ? `<h4>Error</h4><pre class="error">${escapeHtml(t.mensaje_error)}</pre>` : "";
+      const trace = t.trace_error ? `<details><summary>Traceback</summary><pre class="error">${escapeHtml(t.trace_error)}</pre></details>` : "";
+      const pasos = t.pasos?.length ? `<h4>Pasos</h4><ul class="steps">${renderSteps(t.pasos)}</ul>` : "";
+      const evid = renderEvidence(t.adjuntos);
+
+      return `
+      <details class="test" data-status="${escapeHtml(t.estado)}">
+        <summary>
+          <i class="status ${escapeHtml(t.estado)}"></i>
+          <span class="test-name">${escapeHtml(t.nombre)}</span>
+          <span class="duration">${Math.round((t.duracion ?? 0)/10)/100}s</span>
+        </summary>
+        <div class="detail">
+          <p class="meta"><b>Feature:</b> ${escapeHtml(t.feature)} · <b>Historia:</b> ${escapeHtml(t.story)} · <b>Severidad:</b> ${escapeHtml(t.severidad)}<br><b>Suite:</b> ${escapeHtml(t.suite)}</p>
+          ${tags}
+          ${err}
+          ${trace}
+          ${pasos}
+          ${evid}
+        </div>
+      </details>`;
+    }).join("");
+
+    return `<details class="epic" open><summary>${escapeHtml(epic)} · ${items.length} prueba(s)</summary>${testsHtml}</details>`;
+  }).join("");
+
+  root.classList.remove("muted");
+  root.innerHTML = html;
+}
+
+function applyFilter(filter) {
+  document.querySelectorAll(".test").forEach(test => {
+    test.hidden = filter !== "all" && test.dataset.status !== filter;
+  });
+  document.querySelectorAll(".epic").forEach(epic => {
+    const anyVisible = [...epic.querySelectorAll(".test")].some(t => !t.hidden);
+    epic.hidden = !anyVisible;
+  });
+}
+
+function isoDateOnly(iso) {
+  try {
+    // iso: 2026-07-28T12:32:52.658660-04:00 -> 2026-07-28
+    return String(iso).slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
+function pickRunsForDate(runs, dateIso) {
+  if (!dateIso) return [];
+  const dayRuns = runs.filter(r => isoDateOnly(r.generatedAt ?? r.id) === dateIso);
+
+  // ordenar del más nuevo al más viejo (siempre que id sea yyyy-mm-dd_hhmmss)
+  dayRuns.sort((a, b) => String(b.id).localeCompare(String(a.id)));
+
+  // limitar a las últimas 5 ejecuciones del día
+  return dayRuns.slice(0, 5);
+}
+
+function fillRunSelect(select, runs) {
+  select.innerHTML = runs
+    .map(r => `<option value="${escapeHtml(r.path)}">${escapeHtml(r.label ?? r.id)}</option>`)
+    .join("");
+}
+
+async function bootstrap() {
+  if (typeof Chart !== "function") {
+    $("#detailRoot").innerHTML = `<p class="error">Chart.js no está disponible.</p>`;
+    return;
+  }
+
+  try {
+    // Los datos ya están inyectados en el HTML
+    const catalog = CATALOG;
+    const allRuns = catalog.runs ?? [];
+
+    if (!allRuns.length) {
+      throw new Error("No hay ejecuciones registradas");
+    }
+
+    const dateInput = $("#runDate");
+    const select = $("#runSelect");
+
+    const latest = allRuns.find(r => r.id === catalog.latest) ?? allRuns[0];
+    if (!latest) {
+      $("#detailRoot").textContent = "No hay ejecuciones registradas.";
+      return;
+    }
+
+    const latestDate = isoDateOnly(latest.generatedAt ?? latest.id);
+    dateInput.value = latestDate;
+
+    const dates = allRuns.map(r => isoDateOnly(r.generatedAt ?? r.id)).filter(Boolean).sort();
+    dateInput.min = dates[0] ?? "";
+    dateInput.max = dates[dates.length - 1] ?? "";
+
+    async function loadByDate(dateIso) {
+      const dayRuns = pickRunsForDate(allRuns, dateIso);
+      if (!dayRuns.length) {
+        select.disabled = true;
+        select.innerHTML = "";
+        $("#detailRoot").innerHTML = `<p class="error">No hay ejecuciones para ${escapeHtml(dateIso)}.</p>`;
+        return;
+      }
+
+      select.disabled = false;
+      fillRunSelect(select, dayRuns);
+      select.value = dayRuns[0].path;
+
+      // Cargar datos: si es el run actual, usar datos inyectados; si es histórico, cargar JSONs
+      const selected0 = dayRuns.find(r => r.path === select.value);
+      const isCurrentRun = (selected0?.id ?? "") === catalog.latest;
+
+      if (isCurrentRun) {
+        // Usar datos ya inyectados
+        setKpis(CURRENT_SUMMARY);
+        buildStatusChart(CURRENT_SUMMARY);
+        buildEpicChart(CURRENT_SUMMARY);
+        buildSeverityChart(CURRENT_SUMMARY);
+        renderDetail(CURRENT_TESTS_PAYLOAD.tests ?? []);
+      } else {
+        // Para runs históricos, usar datos inyectados en HISTORY_DATA
+        const runId = selected0?.id ?? "";
+        const histEntry = HISTORY_DATA[runId];
+        if (histEntry) {
+          setKpis(histEntry.summary);
+          buildStatusChart(histEntry.summary);
+          buildEpicChart(histEntry.summary);
+          buildSeverityChart(histEntry.summary);
+          if (histEntry.tests?.length) {
+            renderDetail(histEntry.tests);
+          } else {
+            $("#detailRoot").innerHTML = `<div class="panel" style="border-left:4px solid var(--primary)"><p><b>Nota:</b> El detalle de tests solo se conserva para las últimas 5 ejecuciones. Para este run solo están disponibles las métricas del dashboard.</p></div>`;
+          }
+        } else {
+          renderDetail([]);
+        }
+      }
+
+      await buildTrendChart();
+    }
+
+    // primera carga
+    await loadByDate(latestDate);
+
+    dateInput.addEventListener("change", async () => {
+      await loadByDate(dateInput.value);
+    });
+
+    select.addEventListener("change", async () => {
+      const selected = allRuns.find(r => r.path === select.value);
+      const selectedId = selected?.id ?? "";
+      if (selectedId === catalog.latest) {
+        setKpis(CURRENT_SUMMARY);
+        buildStatusChart(CURRENT_SUMMARY);
+        buildEpicChart(CURRENT_SUMMARY);
+        buildSeverityChart(CURRENT_SUMMARY);
+        renderDetail(CURRENT_TESTS_PAYLOAD.tests ?? []);
+      } else {
+        // Cargar desde datos históricos inyectados
+        const histEntry = HISTORY_DATA[selectedId];
+        if (histEntry) {
+          setKpis(histEntry.summary);
+          buildStatusChart(histEntry.summary);
+          buildEpicChart(histEntry.summary);
+          buildSeverityChart(histEntry.summary);
+          if (histEntry.tests?.length) {
+            renderDetail(histEntry.tests);
+          } else {
+            $("#detailRoot").innerHTML = `<div class="panel" style="border-left:4px solid var(--primary)"><p><b>Nota:</b> El detalle de tests solo se conserva para las últimas 5 ejecuciones. Para este run solo están disponibles las métricas del dashboard.</p></div>`;
+          }
+        } else {
+          renderDetail([]);
+        }
+      }
+    });
+
+    $("#reloadBtn").addEventListener("click", () => location.reload());
+
+    document.querySelectorAll("[data-filter]").forEach(button => button.addEventListener("click", () => {
+      document.querySelectorAll("[data-filter]").forEach(b => b.classList.remove("active"));
+      button.classList.add("active");
+      applyFilter(button.dataset.filter);
+    }));
+  } catch (err) {
+    console.error("[ERROR] Bootstrap failed:", err);
+    $("#detailRoot").innerHTML = `<div class="panel" style="border-left:4px solid var(--failed); background:#fff1f2"><h3 style="color:var(--failed); margin-top:0">Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+  }
+}
+
+bootstrap().catch(err => {
+  console.error("[FATAL]", err);
+});
+</script>
+{% endautoescape %}
+</body>
+</html>

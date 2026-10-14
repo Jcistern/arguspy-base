@@ -1,0 +1,23 @@
+# Dependencias principales del proyecto ArgusPy
+
+# Framework de automatización web
+playwright>=1.49.0
+
+# Framework de pruebas
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-bdd>=7.3.0
+pytest-xdist>=3.6.1
+pytest-html>=4.1.1
+
+# Reportes
+allure-pytest>=2.13.5
+
+# Configuración
+python-dotenv>=1.0.1
+
+# Templates
+Jinja2>=3.1.0
+
+# Async utilities
+nest-asyncio>=1.6.0

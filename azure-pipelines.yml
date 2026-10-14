@@ -1,0 +1,346 @@
+# Plantilla de pipeline de ArgusPy. Para usarla, registrarla como pipeline
+# nuevo en el proyecto Azure DevOps de la aplicación y definir como variables
+# del pipeline (secretas las contraseñas): APP_BASE_URL, APP_LOGIN_PATH,
+# APP_ADMIN_USER y APP_ADMIN_PASSWORD. Ajustar agentPool, pytestMarker y
+# testPlanId en el bloque 'variables'.
+trigger:
+  - main
+  - develop
+
+pr:
+  - main
+  - develop
+
+variables:
+  # Ruta al venv del proyecto. Se crea/reutiliza dentro del workspace del
+  # pipeline, por lo que es la MISMA en cualquier VM self-hosted (independiente
+  # del usuario). El step 'Setup Python venv' la resuelve dinamicamente y la
+  # reasigna con task.setvariable al inicio del job.
+  venvPython: '$(Pipeline.Workspace)\s\.venv\Scripts\python.exe'
+  # Agent Pool self-hosted donde corren las pruebas.
+  agentPool: 'Default'
+  # Marker de pytest que define qué escenarios corren en el pipeline.
+  pytestMarker: 'pipeline'
+  # ID del Test Plan de Azure DevOps. Vacío = no publica en Test Plans.
+  testPlanId: ''
+
+stages:
+  # ============================================================
+  # STAGE 1: EJECUTAR TESTS EN LA VM SELF-HOSTED
+  # ============================================================
+  - stage: ExecuteTests
+    displayName: 'Run BDD Tests on VM'
+    # Cualquier maquina registrada en el pool puede tomar el job.
+    pool:
+      name: $(agentPool)
+    jobs:
+      - job: BDDTests
+        displayName: 'Execute BDD tests on self-hosted agent'
+        # La regresion completa puede superar el timeout por defecto de 60 min.
+        timeoutInMinutes: 240
+        steps:
+          - checkout: self
+            clean: true
+
+          - powershell: |
+              # Resuelve el venv dentro del workspace del pipeline. Es la
+              # misma ruta en cualquier VM (no depende del usuario). Si no
+              # existe, lo crea e instala dependencias; si existe, lo
+              # reutiliza para acelerar corridas posteriores.
+              $ErrorActionPreference = 'Stop'
+              $workDir = "$(Pipeline.Workspace)\s"
+              $venvDir = "$workDir\.venv"
+              $venvPy  = "$venvDir\Scripts\python.exe"
+
+              if (-not (Test-Path $venvPy)) {
+                Write-Host "venv no encontrado. Creando en $venvDir..." -ForegroundColor Cyan
+                python -m venv $venvDir
+              } else {
+                Write-Host "venv existente encontrado. Reutilizando." -ForegroundColor Green
+              }
+
+              Write-Host "Instalando/actualizando dependencias..." -ForegroundColor Cyan
+              & $venvPy -m pip install --upgrade pip
+              if (Test-Path "$workDir\requirements.txt") {
+                & $venvPy -m pip install -r "$workDir\requirements.txt"
+              }
+
+              # Certificados: en la red corporativa (proxy con inspeccion SSL),
+              # 'requests' falla al llamar a dev.azure.com con
+              # CERTIFICATE_VERIFY_FAILED. pip-system-certs hace que requests
+              # use el almacen de certificados de Windows (que incluye el CA
+              # corporativo), sin desactivar la verificacion SSL.
+              Write-Host "Instalando pip-system-certs (certificados del SO)..." -ForegroundColor Cyan
+              & $venvPy -m pip install pip-system-certs
+
+              Write-Host "Instalando Chromium para Playwright..." -ForegroundColor Cyan
+              & $venvPy -m playwright install chromium
+
+              # Reasigna la variable para los siguientes steps del job
+              Write-Host "##vso[task.setvariable variable=venvPython]$venvPy"
+              Write-Host "venvPython resuelto: $venvPy" -ForegroundColor Green
+            displayName: 'Setup Python venv (dinamico por VM)'
+
+          - powershell: |
+              Write-Host "=== VM Environment Check ===" -ForegroundColor Cyan
+              Write-Host "User: $env:USERNAME"
+              & "$(venvPython)" --version
+              & "$(venvPython)" -c "import playwright; print('Playwright: ' + playwright.__version__)"
+              & "$(venvPython)" -c "import pytest; print('Pytest: ' + pytest.__version__)"
+              Write-Host "Source: $(Pipeline.Workspace)\s"
+              Write-Host "=== Ready ===" -ForegroundColor Green
+            displayName: 'Verify VM environment'
+            errorActionPreference: continue
+
+          - powershell: |
+              $envPath = "$(Pipeline.Workspace)\s\config\environments\dev.env"
+              New-Item -ItemType Directory -Path (Split-Path $envPath) -Force -EA SilentlyContinue | Out-Null
+
+              # Here-string LITERAL (@'...'@): NO interpreta $ ni backticks, de
+              # modo que contraseñas con caracteres especiales (ej. $, `) no se
+              # corrompen. Azure DevOps sustituye los $(...) como texto plano
+              # ANTES de ejecutar este script, así que el valor llega literal.
+              @'
+              AMBIENTE=dev
+              HEADLESS=false
+              APP_BASE_URL=$(APP_BASE_URL)
+              APP_LOGIN_PATH=$(APP_LOGIN_PATH)
+              APP_ADMIN_USER=$(APP_ADMIN_USER)
+              APP_ADMIN_PASSWORD=$(APP_ADMIN_PASSWORD)
+              '@ | Set-Content -Path $envPath -Encoding UTF8
+            displayName: 'Setup environment variables'
+
+          - powershell: |
+              Set-Location "$(Pipeline.Workspace)\s"
+              # Ejecuta solo los casos marcados con el marker del pipeline.
+              & "$(venvPython)" -m pytest tests/bdd/steps/ -v -p no:cacheprovider --override-ini="addopts=" -m "$(pytestMarker)" --slowmo=700 --alluredir=allure-results --junitxml=test-results/junit-results.xml --html=test-results/report.html --self-contained-html --tb=short
+            displayName: 'Run BDD tests (@$(pytestMarker))'
+            continueOnError: true
+            env:
+              PYTHONPATH: $(Pipeline.Workspace)\s
+
+          # Publica los resultados JUnit en la pestaña "Tests" del build.
+          # Azure DevOps mantiene el historial de ejecucion por test a lo
+          # largo de las corridas. El vinculo con el Test Case work item
+          # se realiza cuando el campo "Automated test name" del
+          # caso en Azure coincide con el nombre del test publicado aqui
+          # (testFunction, ej: test_inicio_de_sesion_exitoso).
+          - task: PublishTestResults@2
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(Pipeline.Workspace)\s\test-results\junit-results.xml'
+              testRunTitle: 'BDD @$(pytestMarker) - $(Build.SourceBranchName) - Build $(Build.BuildId)'
+              mergeTestResults: true
+              failTaskOnFailedTests: false
+              buildPlatform: 'Windows'
+              buildConfiguration: 'QA'
+            displayName: 'Publish test results to Azure (link to Test Cases)'
+            condition: always()
+
+          # Publica los resultados en los Test Points del Test Plan (apartado
+          # "Test Plans"). Corre en modo --auto: descubre automaticamente TODOS
+          # los casos ejecutados (por su tag @TC_<ID> volcado al JUnit) y
+          # publica cada uno en su propio Test Point dentro del plan testPlanId.
+          # Se omite si testPlanId esta vacio.
+          # Asi, al correr una regresion completa, todos los casos quedan
+          # reflejados sin tener que listarlos aqui uno por uno.
+          # SYSTEM_ACCESSTOKEN expone el token del build (requiere que el
+          # job tenga habilitado "Allow scripts to access the OAuth token").
+          - powershell: |
+              # No abortar por escrituras a stderr (pip/python emiten
+              # warnings inofensivos que, de lo contrario, marcan el step
+              # como fallido aunque el script termine con exito).
+              $ErrorActionPreference = 'Continue'
+              Set-Location "$(Pipeline.Workspace)\s"
+
+              # Asegura 'requests' sin que su salida rompa el step.
+              & "$(venvPython)" -m pip install -q requests *> $null
+
+              # Ejecuta el publicador en modo AUTO; stderr se une a stdout para
+              # verlo en el log. El exito/fallo se decide por el codigo de
+              # salida real de Python, no por si escribio a stderr.
+              & "$(venvPython)" tools/publish_testplan_result.py `
+                --org-url "$(System.CollectionUri)" `
+                --project "$(System.TeamProject)" `
+                --plan-id $(testPlanId) `
+                --auto `
+                --junit "test-results/junit-results.xml" `
+                --run-title "BDD @$(pytestMarker) - Build $(Build.BuildId)" `
+                --evidence-dir "test-results/evidencia" 2>&1 | Write-Host
+              $code = $LASTEXITCODE
+              Write-Host "publish_testplan_result exit code: $code"
+              if ($code -ne 0) {
+                Write-Host "##vso[task.logissue type=error]Fallo al publicar resultados en el Test Plan (exit $code)"
+                exit $code
+              }
+            displayName: 'Publish results to Test Plan (auto por @TC_)'
+            condition: and(always(), ne(variables['testPlanId'], ''))
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Pipeline.Workspace)\s\allure-results'
+              artifactName: 'allure-results'
+            displayName: 'Publish Allure results'
+            condition: always()
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Pipeline.Workspace)\s\test-results'
+              artifactName: 'html-reports'
+            displayName: 'Publish pytest HTML report'
+            condition: always()
+
+  # ============================================================
+  # STAGE 2: GENERAR REPORTE HTML (EN AGENTE HOSTED)
+  # ============================================================
+  - stage: GenerateReport
+    displayName: 'Generate HTML Report'
+    dependsOn: ExecuteTests
+    condition: always()
+    pool:
+      vmImage: 'windows-latest'
+    jobs:
+      - job: CreateReport
+        displayName: 'Generate native HTML report with history'
+        steps:
+          - checkout: self
+
+          - task: DownloadBuildArtifacts@1
+            inputs:
+              artifactName: 'allure-results'
+              downloadPath: '$(Pipeline.Workspace)\downloaded-artifacts'
+            displayName: 'Download Allure results'
+            continueOnError: true
+
+          - powershell: |
+              $srcDir = "$(Pipeline.Workspace)\downloaded-artifacts\allure-results"
+              $targetDir = "$(Pipeline.Workspace)\s\allure-results"
+
+              if (Test-Path $srcDir) {
+                Remove-Item -Path $targetDir -Recurse -Force -EA SilentlyContinue
+                Move-Item -Path $srcDir -Destination $targetDir -Force
+                Write-Host "[OK] Allure results organized" -ForegroundColor Green
+              }
+            displayName: 'Organize downloaded artifacts'
+            continueOnError: true
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: 'html-report'
+              targetPath: '$(Pipeline.Workspace)\prev-report'
+              buildType: 'specific'
+              project: '$(System.TeamProject)'
+              definition: '$(System.DefinitionId)'
+              buildVersionToDownload: 'latestFromBranch'
+              branchName: '$(Build.SourceBranch)'
+              allowPartiallySucceededBuilds: true
+              allowFailedBuilds: true
+            displayName: 'Download html-report from previous build'
+            continueOnError: true
+
+          - powershell: |
+              $prevDir = "$(Pipeline.Workspace)\prev-report"
+              $reportDir = "$(Pipeline.Workspace)\s\reporte-html"
+
+              if (Test-Path "$prevDir\runs") {
+                New-Item -ItemType Directory -Path "$reportDir\runs" -Force | Out-Null
+                Copy-Item -Path "$prevDir\runs\*" -Destination "$reportDir\runs" -Recurse -Force
+                Write-Host "[OK] History restored from previous run" -ForegroundColor Green
+              } else {
+                Write-Host "[INFO] No previous report found - starting fresh history" -ForegroundColor Cyan
+              }
+            displayName: 'Restore execution history'
+            continueOnError: true
+
+          - powershell: |
+              Write-Host "Generating native HTML report..." -ForegroundColor Cyan
+
+              $workDir = "$(Pipeline.Workspace)\s"
+              $allureDir = "$workDir\allure-results"
+              if (-not (Test-Path $allureDir)) {
+                New-Item -ItemType Directory -Path $allureDir -Force | Out-Null
+              }
+
+              Set-Location $workDir
+              
+              # Agregar el directorio al PYTHONPATH para que encuentre el módulo reporting
+              $env:PYTHONPATH = "$workDir;$env:PYTHONPATH"
+              
+              # Instalar solo las dependencias mínimas necesarias
+              Write-Host "Installing dependencies..." -ForegroundColor Cyan
+              python -m pip install -q openpyxl jinja2 allure-behave 2>&1 | Out-Null
+              
+              # Ejecutar el generador de reportes directamente
+              & python -m reporting.generate_report --results allure-results --output reporte-html 2>&1
+              $exitCode = $LASTEXITCODE
+
+              if ($exitCode -eq 0) {
+                Write-Host "[OK] Report generated successfully" -ForegroundColor Green
+              } else {
+                Write-Host "[ERROR] Report generation failed (code: $exitCode)" -ForegroundColor Red
+              }
+
+              $reportDir = "$workDir\reporte-html"
+              if (-not (Test-Path $reportDir)) {
+                Write-Host "[ERROR] reporte-html directory not created" -ForegroundColor Red
+                exit 1
+              }
+
+              Write-Host ""
+              Write-Host "STRUCTURE VERIFICATION:" -ForegroundColor Cyan
+              Get-ChildItem -Path $reportDir -Recurse -Include "*.json", "*.html" | ForEach-Object {
+                Write-Host "  $_" -ForegroundColor Gray
+              }
+            displayName: 'Generate HTML report'
+            continueOnError: false
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Pipeline.Workspace)\s\reporte-html'
+              artifactName: 'html-report'
+            displayName: 'Publish HTML report'
+            condition: always()
+
+          - powershell: |
+              $summaryPath = "$(Pipeline.Workspace)\s\reporte-html\summary.md"
+              if (Test-Path $summaryPath) {
+                Write-Host "##vso[task.uploadsummary]$summaryPath"
+                Write-Host "[OK] Resumen publicado en Summary del build" -ForegroundColor Green
+              } else {
+                Write-Host "[WARN] summary.md no encontrado" -ForegroundColor Yellow
+              }
+            displayName: 'Publish summary to build results'
+            condition: always()
+
+  # ============================================================
+  # STAGE 3: MOSTRAR RESUMEN (EN AGENTE HOSTED)
+  # ============================================================
+  - stage: Summary
+    displayName: 'Execution Summary'
+    dependsOn: GenerateReport
+    condition: always()
+    pool:
+      vmImage: 'windows-latest'
+    jobs:
+      - job: ShowSummary
+        displayName: 'Show results and instructions'
+        steps:
+          - powershell: |
+              Write-Host "============================================================"
+              Write-Host "BDD Test Suite Execution Complete"
+              Write-Host "============================================================"
+              Write-Host ""
+              Write-Host "ARTIFACTS GENERATED:"
+              Write-Host "  - html-report: Native HTML dashboard with history"
+              Write-Host "  - allure-results: Raw Allure test data"
+              Write-Host "  - html-reports: pytest HTML report"
+              Write-Host ""
+              Write-Host "HOW TO USE:"
+              Write-Host "  1. Download 'html-report' artifact from Azure"
+              Write-Host "  2. Extract to local machine"
+              Write-Host "  3. Open reporte-html/index.html in browser"
+              Write-Host "  4. Navigate through up to 200 execution runs"
+              Write-Host "============================================================"
+            displayName: 'Display summary'

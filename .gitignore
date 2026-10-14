@@ -1,0 +1,57 @@
+# Entornos virtuales y configuración local
+.venv/
+venv/
+env/
+ENV/
+.env
+*.env
+!.env.example
+!*.env.example
+
+
+# Cachés y archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+
+# Artefactos, videos y reportes de pruebas
+allure-results/
+allure-report/
+playwright-report/
+reporte-html/
+test-results/
+reports/
+artifacts/
+screenshots/
+videos/
+*.webm
+*.png
+*.mp4
+
+
+# Archivos temporales y del sistema
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+
+# Configuración local de IDE
+.vscode/
+.idea/
+
+.browser-profile/
+
+# Documentos
+*.xlsx
+docs/
+
+
