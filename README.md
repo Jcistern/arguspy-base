@@ -130,6 +130,19 @@ python -m http.server 8000 -d reporte-html
 
 En Windows, `.\tools\run_report.ps1` ejecuta las pruebas, genera el reporte y lo abre en un solo paso.
 
+## Kiro: agentes y MCP de exploración
+
+`.kiro/` incluye steering (convenciones del proyecto), agentes (`explorar-ui-mcp`, `explorar-ui-cli`, `crear-page-object`, `automatizar-caso-prueba`) y skills de mantenimiento.
+
+Los agentes exploran la UI con el servidor MCP `argus-playwright` (`.kiro/mcp/playwright_server.py`): abre Chromium con la config del `.env`, inicia sesión con `LoginPage` y entrega el árbol accesible (`snapshot`) para definir locators. Para habilitarlo (requiere Python 3.10+):
+
+```bash
+pip install -r requirements-dev.txt
+cp .kiro/settings/mcp.json.example .kiro/settings/mcp.json   # y reemplazar <RUTA_PROYECTO>
+```
+
+En Windows, el `command` del `mcp.json` es `<RUTA_PROYECTO>\\.venv\\Scripts\\python.exe`.
+
 ## Azure DevOps (opcional)
 
 - **Pipeline:** `azure-pipelines.yml` es una plantilla. Regístrala como pipeline nuevo en el proyecto de la aplicación, define las variables `APP_BASE_URL`, `APP_LOGIN_PATH`, `APP_ADMIN_USER` y `APP_ADMIN_PASSWORD` (las contraseñas como secretas) y ajusta `agentPool` y `pytestMarker`.
