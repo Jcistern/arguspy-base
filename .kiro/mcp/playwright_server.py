@@ -60,6 +60,7 @@ async def _pagina() -> Page:
     )
     _page = await _context.new_page()
     _page.set_default_timeout(15_000)
+    _page.set_default_navigation_timeout(60_000)
     return _page
 
 
