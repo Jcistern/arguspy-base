@@ -20,7 +20,8 @@ variables:
   # Agent Pool self-hosted donde corren las pruebas.
   agentPool: 'Default'
   # Marker de pytest que define qué escenarios corren en el pipeline.
-  pytestMarker: 'pipeline'
+  # Cambiar a 'pipeline' cuando los escenarios de CI lleven el tag @pipeline.
+  pytestMarker: 'smoke'
   # ID del Test Plan de Azure DevOps. Vacío = no publica en Test Plans.
   testPlanId: ''
 
@@ -61,9 +62,8 @@ stages:
 
               Write-Host "Instalando/actualizando dependencias..." -ForegroundColor Cyan
               & $venvPy -m pip install --upgrade pip
-              if (Test-Path "$workDir\requirements.txt") {
-                & $venvPy -m pip install -r "$workDir\requirements.txt"
-              }
+              # requirements.lock fija las versiones exactas (incluye requests).
+              & $venvPy -m pip install -r "$workDir\requirements.lock"
 
               # Certificados: en la red corporativa (proxy con inspeccion SSL),
               # 'requests' falla al llamar a dev.azure.com con
@@ -110,10 +110,20 @@ stages:
               '@ | Set-Content -Path $envPath -Encoding UTF8
             displayName: 'Setup environment variables'
 
+          # Mismas validaciones que pre-commit (convenciones de AGENTS.md y
+          # pytest --collect-only): corta el build antes de abrir el navegador.
+          - powershell: |
+              Set-Location "$(Pipeline.Workspace)\s"
+              & "$(venvPython)" tools/validar_convenciones.py
+              exit $LASTEXITCODE
+            displayName: 'Validar convenciones (AGENTS.md)'
+
           - powershell: |
               Set-Location "$(Pipeline.Workspace)\s"
               # Ejecuta solo los casos marcados con el marker del pipeline.
-              & "$(venvPython)" -m pytest tests/bdd/steps/ -v -p no:cacheprovider --override-ini="addopts=" -m "$(pytestMarker)" --slowmo=700 --alluredir=allure-results --junitxml=test-results/junit-results.xml --html=test-results/report.html --self-contained-html --tb=short
+              # Mantiene los addopts de pytest.ini (--strict-markers, --import-mode);
+              # el --html de esta línea reemplaza al de pytest.ini.
+              & "$(venvPython)" -m pytest tests/bdd/steps/ -v -p no:cacheprovider -m "$(pytestMarker)" --slowmo=700 --alluredir=allure-results --junitxml=test-results/junit-results.xml --html=test-results/report.html --self-contained-html --tb=short
             displayName: 'Run BDD tests (@$(pytestMarker))'
             continueOnError: true
             env:
@@ -152,9 +162,6 @@ stages:
               # como fallido aunque el script termine con exito).
               $ErrorActionPreference = 'Continue'
               Set-Location "$(Pipeline.Workspace)\s"
-
-              # Asegura 'requests' sin que su salida rompa el step.
-              & "$(venvPython)" -m pip install -q requests *> $null
 
               # Ejecuta el publicador en modo AUTO; stderr se une a stdout para
               # verlo en el log. El exito/fallo se decide por el codigo de
@@ -268,9 +275,9 @@ stages:
               # Agregar el directorio al PYTHONPATH para que encuentre el módulo reporting
               $env:PYTHONPATH = "$workDir;$env:PYTHONPATH"
               
-              # Instalar solo las dependencias mínimas necesarias
+              # El generador de reportes solo necesita Jinja2
               Write-Host "Installing dependencies..." -ForegroundColor Cyan
-              python -m pip install -q openpyxl jinja2 allure-behave 2>&1 | Out-Null
+              python -m pip install -q jinja2 2>&1 | Out-Null
               
               # Ejecutar el generador de reportes directamente
               & python -m reporting.generate_report --results allure-results --output reporte-html 2>&1

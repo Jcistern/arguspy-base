@@ -1,0 +1,28 @@
+# Validaciones en cada commit, para todo el equipo (con o sin asistente de IA).
+# Activar una vez por clon:  .venv/bin/python -m pre_commit install
+#                    Windows: .venv\Scripts\python -m pre_commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: bloquear-env
+        name: No subir archivos .env con credenciales (usar *.env.example)
+        language: fail
+        entry: "Los .env contienen credenciales; solo se versionan las plantillas *.env.example."
+        files: \.env$
+
+      # Revisa todo el proyecto (6-10 archivos) y ejecuta pytest --collect-only
+      # con el Python del .venv, así detecta también markers quitados de pytest.ini.
+      - id: validar-convenciones
+        name: Convenciones de AGENTS.md
+        language: python
+        entry: python tools/validar_convenciones.py
+        pass_filenames: false
+        files: ^(pages/|tests/|data/|conftest\.py$|pytest\.ini$)
