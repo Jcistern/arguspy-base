@@ -20,16 +20,24 @@ Framework de automatización web construido con **Python**, **pytest**, **pytest
 ## Inicio rápido
 
 ```bash
-python -m venv .venv
+python -m venv .venv          # Windows: py -3.12 -m venv .venv
 # Windows: .venv\Scripts\activate   |   macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
+python -m pip install -r requirements-dev.lock  # pruebas + herramientas (pre-commit, plan .xlsx, MCP); solo pruebas: requirements.lock
+python -m playwright install chromium
+```
+
+Los `.lock` fijan versiones exactas para que todas las máquinas (Windows, macOS, Linux y el pipeline) instalen lo mismo. Las dependencias directas se declaran en `requirements.txt` / `requirements-dev.txt`; tras modificarlas, regenera los lock con [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv pip compile requirements.txt --universal --python-version 3.10 -o requirements.lock
+uv pip compile requirements-dev.txt --universal --python-version 3.10 -o requirements-dev.lock
 ```
 
 Crea tu archivo de ambiente a partir del ejemplo y complétalo:
 
 ```bash
 cp config/environments/dev.env.example config/environments/dev.env
+# Windows: copy config\environments\dev.env.example config\environments\dev.env
 ```
 
 ```dotenv
@@ -65,19 +73,28 @@ ArgusPy/
 │   ├── base_page.py             # acciones, esperas y verificaciones comunes
 │   └── login_page.py            # login por usuario y contraseña
 ├── tests/bdd/
-│   ├── features/login.feature
-│   └── steps/test_login_steps.py
+│   ├── features/                # .feature (uno por pantalla, enlazados al plan con @CP_)
+│   └── steps/                   # test_<pantalla>_steps.py con @scenario(...)
 ├── reporting/                   # generador del reporte HTML
 ├── tools/
 │   ├── publish_testplan_result.py
-│   └── run_report.ps1
+│   ├── run_report.ps1
+│   ├── validar_convenciones.py  # convenciones de AGENTS.md (pre-commit, CI, hooks)
+│   ├── resumen_fallos.py        # resumen de pruebas fallidas (allure-results)
+│   ├── plan_pruebas.py          # plan de pruebas .xlsx ⇄ .feature (casos y dudas)
+│   ├── verificar_steps.py       # pasos de los .feature sin step definido
+│   └── hook_axet.py             # hooks de aXet
 ├── utils/
 │   ├── helpers.py               # obtener_env_requerida
 │   ├── logger.py
 │   └── test_data.py             # cargar_datos_json / obtener_seccion_validada
 ├── conftest.py                  # fixtures, hooks de evidencia y login del Background
 ├── azure-pipelines.yml          # plantilla de pipeline
-└── pytest.ini
+├── pytest.ini
+├── AGENTS.md                    # convenciones para personas y asistentes de IA
+├── .axetrules/                  # reglas y hooks de aXet
+├── .axet-plugin/skills/         # procedimientos (skills) de aXet
+└── .kiro/mcp/                   # exploración de UI: explorar.py y servidor MCP argus-playwright
 ```
 
 ## Login y perfiles
@@ -119,29 +136,67 @@ Para pasos que guardan datos reales, condiciona el clic final a la fixture `perm
 
 El generador consume `allure-results/` y conserva epic, feature, story, severity, tags, pasos, duración y screenshots.
 
-El reporte carga sus datos con `fetch()`, así que **hay que abrirlo por HTTP**, no con doble clic (`file://`):
+El `index.html` es autocontenido (los datos van incrustados), así que se abre directamente con doble clic:
 
 ```bash
 python -m pytest --alluredir=allure-results --clean-alluredir
 python -m reporting.generate_report --results allure-results --output reporte-html
-python -m http.server 8000 -d reporte-html
-# abrir http://localhost:8000/
+# abrir reporte-html/index.html
 ```
 
 En Windows, `.\tools\run_report.ps1` ejecuta las pruebas, genera el reporte y lo abre en un solo paso.
 
-## Kiro: agentes y MCP de exploración
+## Asistentes de IA y validaciones
 
-`.kiro/` incluye steering (convenciones del proyecto), agentes (`explorar-ui-mcp`, `explorar-ui-cli`, `crear-page-object`, `automatizar-caso-prueba`) y skills de mantenimiento.
+Las convenciones viven en un solo lugar, **`AGENTS.md`**, y los procedimientos en **`.axet-plugin/skills/`**. Cada herramienta solo apunta a ellos:
 
-Los agentes exploran la UI con el servidor MCP `argus-playwright` (`.kiro/mcp/playwright_server.py`): abre Chromium con la config del `.env`, inicia sesión con `LoginPage` y entrega el árbol accesible (`snapshot`) para definir locators. Para habilitarlo (requiere Python 3.10+):
+| Herramienta | Qué lee |
+|---|---|
+| **aXet** | `AGENTS.md`, `.axetrules/reglas.md`, skills con `%explorar-ui`, `%crear-page-object`, `%automatizar-caso`, `%analizar-fallo`, `%revisar-cambios`, `%importar-plan`, `%actualizar-plan`; `.clineignore` le oculta los `.env` |
+| **Claude Code** | `CLAUDE.md` (importa `AGENTS.md`) |
+
+### Validaciones (para todo el equipo, con o sin IA)
+
+`tools/validar_convenciones.py` revisa `pages/`, `tests/` y `conftest.py` (sin `wait_for_timeout`, `time.sleep`, `force=True`, XPath ni steps `async`; tags registrados en `pytest.ini`) y ejecuta `pytest --collect-only`. Se aplica en tres lugares:
+
+- **pre-commit**, en cada commit. Activarlo una vez por clon: `.venv/bin/python -m pre_commit install` (Windows: `.venv\Scripts\python -m pre_commit install`).
+- **Azure Pipelines**, paso `Validar convenciones` antes de ejecutar las pruebas.
+- **Hooks de aXet** (`.axetrules/hooks/`, solo macOS/Linux): activar *Settings → Feature Settings → Enable Hooks*. Bloquean leer `.env` y editar `.lock`, y avisan al asistente de las infracciones apenas edita un archivo.
+
+Para aceptar un caso justificado, agregar `# argus: permitido <motivo>` en la línea.
+
+### Plan de pruebas ⇄ .feature
+
+Los planes `.xlsx` se dejan en `data/planes/` (ignorada por git). Cada escenario se enlaza con su caso por el tag `@CP_<PANTALLA>_<NN>` (ej: `CP-PRD-02` → `@CP_PRD_02`).
+
+- `%importar-plan`: convierte los casos del plan en `.feature` (un feature por pantalla).
+- `%actualizar-plan`: agrega al plan los escenarios sin `@CP_` con ID provisional (`CP-PRD-N01`) y marca como `automática` los casos automatizados. Escribe una copia `<plan>_actualizado.xlsx`; el original no se toca.
+- Los escenarios propios del framework llevan `@sin_plan` y no se sincronizan.
 
 ```bash
-pip install -r requirements-dev.txt
-cp .kiro/settings/mcp.json.example .kiro/settings/mcp.json   # y reemplazar <RUTA_PROYECTO>
+.venv/bin/python tools/plan_pruebas.py revisar data/planes/<plan>.xlsx    # casos incompletos o vagos
+.venv/bin/python tools/plan_pruebas.py comparar data/planes/<plan>.xlsx   # plan vs .feature
+.venv/bin/python tools/verificar_steps.py --sugerir                       # pasos sin step definido
 ```
 
-En Windows, el `command` del `mcp.json` es `<RUTA_PROYECTO>\\.venv\\Scripts\\python.exe`.
+Lo que el plan no define se registra como duda en la hoja «Dudas» (ID provisional `D-<PANTALLA>-N01`) en vez de suponerlo.
+
+### Configuración recomendada de aXet
+
+Modelo **Claude Sonnet 5** (o equivalente), *Auto Compact* y *Checkpoints* activos, **YOLO Mode desactivado**. Se recomienda marcar *Browser Settings → Disable browser tool usage*: los locators se obtienen del árbol accesible, no de capturas.
+
+### Exploración de la UI
+
+`argus-playwright` (`.kiro/mcp/playwright_server.py`) abre Chromium con la config del `.env`, inicia sesión con `LoginPage` y entrega el árbol accesible (`snapshot`) para definir locators. aXet no admite conectores MCP propios, así que usa la versión de terminal:
+
+```bash
+.venv/bin/python .kiro/mcp/explorar.py /login --sin-sesion
+.venv/bin/python .kiro/mcp/explorar.py /dashboard --perfil admin --clic "button:Nuevo" --contenedor "dialog:Nuevo"
+```
+
+En Windows, `.venv\Scripts\python .kiro\mcp\explorar.py ...`.
+
+En un cliente que sí admita MCP propios (ej: Claude Code), se registra con `command` = Python del `.venv` y `args` = ruta a `.kiro/mcp/playwright_server.py` (requiere `requirements-dev.lock`).
 
 ## Azure DevOps (opcional)
 

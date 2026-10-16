@@ -55,6 +55,8 @@ Thumbs.db
 docs/
 
 
+# Planes de pruebas del cliente (.xlsx/.json): pueden traer datos sensibles
+data/planes/
 
-# Kiro: la config MCP tiene rutas locales (copiar desde mcp.json.example)
-.kiro/settings/mcp.json
+# Caché del grafo de código de aXet
+.graphify/
