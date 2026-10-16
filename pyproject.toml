@@ -4,15 +4,5 @@ version = "1.0.0"
 description = "Framework de automatización web profesional construido sobre Playwright y Python"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "playwright>=1.49.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-bdd>=7.3.0",
-    "pytest-xdist>=3.6.1",
-    "pytest-html>=4.1.1",
-    "allure-pytest>=2.13.5",
-    "python-dotenv>=1.0.1",
-    "Jinja2>=3.1.0",
-    "nest-asyncio>=1.6.0",
-]
+# Las dependencias se definen en requirements.txt (directas) y requirements.lock
+# (versiones exactas para instalar). No duplicarlas aquí.

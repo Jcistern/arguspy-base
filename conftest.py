@@ -75,11 +75,11 @@ def pytest_bdd_apply_tag(tag: str, function):
     colección para no romper ``--strict-markers``. Para el resto de tags se
     devuelve ``None`` y pytest-bdd aplica su comportamiento por defecto.
     """
-    if tag.startswith("TC_"):
+    # @CP_<PANTALLA>_<NN> enlaza el escenario con su caso del plan de pruebas (.xlsx).
+    if tag.startswith(("TC_", "CP_")):
         if _pytest_config is not None and tag not in _tc_markers_registrados:
-            _pytest_config.addinivalue_line(
-                "markers", f"{tag}: Test Case Azure DevOps ID {tag[3:]}"
-            )
+            descripcion = f"Test Case Azure DevOps ID {tag[3:]}" if tag.startswith("TC_") else f"Caso del plan {tag}"
+            _pytest_config.addinivalue_line("markers", f"{tag}: {descripcion}")
             _tc_markers_registrados.add(tag)
         getattr(pytest.mark, tag)(function)
         return True
@@ -100,7 +100,7 @@ def pytest_bdd_apply_tag(tag: str, function):
 async def app_page(request: pytest.FixtureRequest, pytestconfig: pytest.Config) -> Page:
     """Abre Chromium con un contexto aislado apuntando a ``APP_BASE_URL``.
 
-    Al terminar adjunta a Allure un screenshot si el test falló.
+    Las capturas de evidencia las toman los hooks de pytest-bdd (ver más abajo).
     """
     global _bdd_loop
     _bdd_loop = asyncio.get_running_loop()
@@ -118,7 +118,6 @@ async def app_page(request: pytest.FixtureRequest, pytestconfig: pytest.Config) 
         context = await browser.new_context(
             locale="es-CL",
             timezone_id="America/Santiago",
-            # record_video_dir="test-results/videos",  # Desactivado: requiere ffmpeg
             # base_url permite que los Page Objects naveguen con rutas relativas.
             base_url=obtener_env_requerida("APP_BASE_URL"),
         )
@@ -130,48 +129,11 @@ async def app_page(request: pytest.FixtureRequest, pytestconfig: pytest.Config) 
 
         yield pg
 
-        # Teardown: screenshot de fallo. La evidencia TC_<id>.png se escribe
-        # en 'pytest_runtest_teardown' para todos los casos.
-        reporte = getattr(request.node, "_argus_report_call", None)
-        if reporte is not None and reporte.failed:
-            try:
-                captura = await pg.screenshot(full_page=True)
-                allure.attach(
-                    captura,
-                    name=f"falla-{request.node.name}",
-                    attachment_type=allure.attachment_type.PNG,
-                )
-            except Exception as exc:
-                logger.warn("No se pudo capturar screenshot de evidencia", str(exc))
-
-        video = pg.video
-
         try:
             await context.close()
             await browser.close()
         except Exception as exc:
             logger.warn("No se pudo cerrar el navegador", str(exc))
-
-        if video is not None:
-            try:
-                ruta_video = await video.path()
-                allure.attach.file(
-                    ruta_video,
-                    name=f"video-{request.node.name}",
-                    attachment_type=allure.attachment_type.WEBM,
-                )
-            except Exception as exc:
-                logger.warn("No se pudo adjuntar el video de evidencia", str(exc))
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
-    """Guarda el resultado de la fase 'call' en el item para que la fixture
-    'app_page' pueda decidir si debe adjuntar un screenshot de evidencia."""
-    outcome = yield
-    reporte = outcome.get_result()
-    if reporte.when == "call":
-        item._argus_report_call = reporte
 
 
 @pytest.fixture(autouse=True)
@@ -235,6 +197,8 @@ def login_page(app_page: Page) -> LoginPage:
 # ---------------------------------------------------------------------------
 
 _last_step_screenshot: dict = {}
+# Tests cuyo screenshot final ya se adjuntó como captura del step fallido.
+_captura_error_adjuntada: set[str] = set()
 
 
 def pytest_bdd_after_step(request, feature, scenario, step, step_func):
@@ -270,6 +234,7 @@ def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func
                 attachment_type=allure.attachment_type.PNG,
             )
             _last_step_screenshot[request.node.nodeid] = captura
+            _captura_error_adjuntada.add(request.node.nodeid)
     except Exception as exc:
         logger.warn(f"No se pudo capturar screenshot del step fallido: {exc}")
 
@@ -277,18 +242,24 @@ def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_teardown(item):
     """Al terminar cada test, adjunta el screenshot del ULTIMO step a Allure y
-    lo guarda como evidencia ``TC_<id>.png`` (pase o falle el caso)."""
+    lo guarda como evidencia ``TC_<id>.png`` (pase o falle el caso).
+
+    Si el test falló en un step, esa captura ya se adjuntó en
+    ``pytest_bdd_step_error`` y no se repite."""
     yield
     nodeid = item.nodeid
     captura = _last_step_screenshot.pop(nodeid, None)
+    ya_adjuntada = nodeid in _captura_error_adjuntada
+    _captura_error_adjuntada.discard(nodeid)
     if captura is None:
         return
 
-    allure.attach(
-        captura,
-        name="resultado_final",
-        attachment_type=allure.attachment_type.PNG,
-    )
+    if not ya_adjuntada:
+        allure.attach(
+            captura,
+            name="resultado_final",
+            attachment_type=allure.attachment_type.PNG,
+        )
 
     try:
         tc_id = None

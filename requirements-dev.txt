@@ -3,3 +3,9 @@
 
 # Servidor MCP de exploración de UI (.kiro/mcp/playwright_server.py). Requiere Python 3.10+.
 fastmcp>=2.0.0
+
+# Validaciones en cada commit (.pre-commit-config.yaml)
+pre-commit>=3.7.0
+
+# Lectura y escritura del plan de pruebas .xlsx (tools/plan_pruebas.py)
+openpyxl>=3.1.0

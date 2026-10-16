@@ -7,7 +7,6 @@ playwright>=1.49.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-bdd>=7.3.0
-pytest-xdist>=3.6.1
 pytest-html>=4.1.1
 
 # Reportes
@@ -21,3 +20,6 @@ Jinja2>=3.1.0
 
 # Async utilities
 nest-asyncio>=1.6.0
+
+# Publicación de resultados en Azure Test Plans (tools/publish_testplan_result.py)
+requests>=2.31.0

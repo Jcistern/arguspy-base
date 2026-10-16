@@ -8,6 +8,11 @@ from typing import Pattern
 
 from playwright.async_api import Locator, Page, expect
 
+# Timeout global de las verificaciones expect(...) (Playwright usa 5 s por
+# defecto). Se fija aquí para que aplique a los tests y al MCP de exploración.
+TIMEOUT_EXPECT_MS = 15_000
+expect.set_options(timeout=TIMEOUT_EXPECT_MS)
+
 
 class BasePage:
     """Clase base que encapsula navegación, acciones y verificaciones comunes."""
@@ -18,13 +23,20 @@ class BasePage:
     # ─── Navegación ────────────────────────────────────────────────────────
 
     async def navigate_to(self, ruta: str) -> None:
-        """Navega a una ruta relativa a BASE_URL."""
-        await self.page.goto(ruta)
-        await self.wait_for_page_load()
+        """Navega a una ruta relativa a BASE_URL.
+
+        Solo espera el DOM: cada Page Object debe verificar después con
+        ``expect`` un elemento que confirme que la pantalla cargó.
+        """
+        await self.page.goto(ruta, wait_until="domcontentloaded")
 
     async def wait_for_page_load(self) -> None:
-        """Espera que la red quede inactiva."""
-        await self.page.wait_for_load_state("networkidle")
+        """Espera el evento ``load`` de la página.
+
+        No usa ``networkidle``: en SPAs con polling o websockets puede no
+        cumplirse nunca. Para sincronizar, preferir ``expect`` sobre un elemento.
+        """
+        await self.page.wait_for_load_state("load")
 
     # ─── Esperas ───────────────────────────────────────────────────────────
 

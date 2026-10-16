@@ -1,5 +1,4 @@
 param(
-  [int]$Port = 8000,
   [string]$Marker = "test_regresion",
   [string]$AllureResultsDir = "allure-results",
   [string]$ReportDir = "reporte-html",
@@ -23,17 +22,9 @@ python -m reporting.generate_report --results $AllureResultsDir --output $Report
 $reportExit = $LASTEXITCODE
 if ($reportExit -ne 0) { throw "generate_report falló (exit=$reportExit)." }
 
-Write-Host "3) Levantando servidor HTTP estático (necesario; no funciona file:// por restricciones del browser)..." -ForegroundColor Cyan
-$serverCmd = "python -m http.server $Port -d `"$ReportDir`""
-Start-Process -WindowStyle Normal -FilePath "powershell" -ArgumentList @("-NoExit","-Command",$serverCmd) | Out-Null
-
-Start-Sleep -Milliseconds 600
-
-$Url = "http://localhost:$Port/"
-Write-Host "4) Abriendo reporte: $Url" -ForegroundColor Cyan
-Start-Process $Url | Out-Null
-
-Write-Host ""
-Write-Host "Listo. Deja la ventana del servidor abierta mientras uses el reporte." -ForegroundColor Green
+# El index.html es autocontenido (datos incrustados): se abre sin servidor HTTP.
+$IndexPath = Join-Path (Resolve-Path $ReportDir) "index.html"
+Write-Host "3) Abriendo reporte: $IndexPath" -ForegroundColor Cyan
+Start-Process $IndexPath | Out-Null
 
 exit $pytestExit
