@@ -1,0 +1,5 @@
+#!/bin/sh
+# Hook de aXet (solo macOS/Linux: en Windows aXet ejecuta los hooks con Node).
+# Delega en tools/hook_axet.py con el Python del .venv; el nombre del evento es el del archivo.
+RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
+exec "$RAIZ/.venv/bin/python" "$RAIZ/tools/hook_axet.py" "$(basename "$0")"

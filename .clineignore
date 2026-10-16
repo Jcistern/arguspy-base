@@ -1,0 +1,4 @@
+# aXet (basado en Cline) no lee estos archivos con sus herramientas.
+# Credenciales del ambiente; las plantillas *.env.example siguen visibles.
+config/environments/*.env
+.env

@@ -35,8 +35,8 @@ Mapear qué se usa realmente. Para un proyecto pytest-bdd:
 - **Mecanismos desactivados**: código detrás de flags apagados por defecto
   (ej. `if os.getenv("X_ENABLED") == "true":`) que ya no se usa.
 
-Para proyectos grandes o desconocidos, delegar el mapeo a un sub-agente de
-investigación (context-gatherer) pidiéndole rutas exactas y EVIDENCIA de uso.
+Para proyectos grandes o desconocidos, delegar el mapeo a un sub-agente (si la
+herramienta lo permite) pidiéndole rutas exactas y EVIDENCIA de uso.
 
 ### 2. Confirmar cada hallazgo con evidencia (no confiar en el mapeo a ciegas)
 
